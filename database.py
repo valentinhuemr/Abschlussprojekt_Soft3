@@ -1,28 +1,13 @@
-from tinydb import TinyDB
-from mechanisms.mechanism_model import Mechanism
+from tinydb import TinyDB, Query
 
-db = TinyDB("data/mechanisms.json")
+class MechanismDB:
+    def __init__(self):
+        self.db = TinyDB("mechanisms.json")
 
-def save_mechanism(mechanism):
-    """Speichert einen Mechanismus in TinyDB"""
-    mechanism_data = mechanism.to_dict()
-    if not isinstance(mechanism_data, dict):
-        raise TypeError("Mechanismus-Daten sind kein Dictionary!")
-    db.insert(mechanism_data)
+    def save_mechanism(self, name, joints, rods, radius):
+        self.db.insert({"name": name, "joints": joints, "rods": rods, "radius": radius})
 
-def load_mechanisms():
-    """Lädt alle gespeicherten Mechanismen"""
-    mechanisms = []
-    
-    data_list = db.all()
-    
-    if not isinstance(data_list, list):
-        raise TypeError("Fehler: db.all() gibt keine Liste zurück!")
-    
-    for entry in data_list:
-        if isinstance(entry, dict):  
-            mechanisms.append(Mechanism.from_dict(entry))
-        else:
-            print("⚠️ Fehler: Eintrag in der Datenbank ist kein Dictionary:", entry)
-
-    return mechanisms
+    def load_mechanism(self, name):
+        Mechanism = Query()
+        result = self.db.search(Mechanism.name == name)
+        return result[0] if result else None

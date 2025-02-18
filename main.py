@@ -1,176 +1,82 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from tinydb import TinyDB, Query
-from mechanisms.mechanism_model import Mechanism
-from mechanisms.solver import Solver
-import tempfile
-import os
-
-# Datenbankpfad
-DB_PATH = "data/mechanisms.json"
-db = TinyDB(DB_PATH)
-MechanismQuery = Query()
-
-# 🟢 Funktion zum Speichern
-def save_mechanism(name, joints, fixed_joints, radius, start_angle):
-    mechanism_data = {
-        "name": name,
-        "joints": joints,
-        "fixed_joints": fixed_joints,
-        "radius": radius,
-        "start_angle": start_angle
-    }
-    db.insert(mechanism_data)
-
-# 🟢 Funktion zum Laden
-def load_mechanisms():
-    return db.all()
-
-# 🟢 Funktion zur Berechnung der neuen Gelenkpositionen (Kinematische Simulation)
-def compute_mechanism_motion(joints, fixed_joints, radius, start_angle, steps=36):
-    simulation_data = []
-    x_c, y_c = joints[0]  # Mittelpunkt des rotierenden Arms
-    l1 = np.linalg.norm(np.array(joints[1]) - np.array(joints[0]))  # Länge der ersten Stange
-
-    for step in range(steps):
-        theta = np.radians(start_angle + step * (360 / steps))  # Drehwinkel
-        x_new = x_c + radius * np.cos(theta)
-        y_new = y_c + radius * np.sin(theta)
-
-        new_positions = [(x_c, y_c), (x_new, y_new)]
-
-        # Berechnung der restlichen Gelenke unter Berücksichtigung fixer Punkte
-        for i in range(2, len(joints)):
-            if fixed_joints[i-2]:  # Fixierte Gelenke bleiben unverändert
-                new_positions.append(joints[i])
-            else:
-                # Bewege das Gelenk so, dass die Stangenlänge erhalten bleibt
-                prev_x, prev_y = new_positions[i - 1]
-                l_i = np.linalg.norm(np.array(joints[i]) - np.array(joints[i - 1]))  # Länge der Stange
-                angle_i = np.arctan2(joints[i][1] - joints[i-1][1], joints[i][0] - joints[i-1][0])
-
-                new_x = prev_x + l_i * np.cos(angle_i)
-                new_y = prev_y + l_i * np.sin(angle_i)
-                new_positions.append((new_x, new_y))
-
-        simulation_data.append(new_positions)
-
-    return simulation_data
-
-# 🟢 Funktion zur Animation
-def plot_mechanism_animation(joints, simulation_data):
-    fig, ax = plt.subplots()
-    ax.set_xlim(-50, 50)
-    ax.set_ylim(-50, 50)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-
-    # Kreisbahn berechnen
-    x_c, y_c = joints[0]  # Mittelpunkt
-    radius = np.linalg.norm(np.array(joints[1]) - np.array(joints[0]))
-    theta_circle = np.linspace(0, 2 * np.pi, 100)
-    x_circle = x_c + radius * np.cos(theta_circle)
-    y_circle = y_c + radius * np.sin(theta_circle)
-    ax.plot(x_circle, y_circle, 'r--', lw=1.5, label="Kreisbahn")
-
-    # Gelenke und Stäbe zeichnen
-    line, = ax.plot([], [], 'bo-', lw=2, label="Mechanismus")
-    ax.scatter(x_c, y_c, c='black', marker='o', label="Mittelpunkt")
-
-    # **Update-Funktion für die Animation**
-    def update(frame):
-        positions = simulation_data[frame]
-        x_vals, y_vals = zip(*positions)
-        line.set_data(x_vals, y_vals)
-        return line,
-
-    ani = animation.FuncAnimation(fig, update, frames=len(simulation_data), interval=100, repeat=True)
-
-    # **GIF als temporäre Datei speichern**
-    temp_gif = tempfile.NamedTemporaryFile(delete=False, suffix=".gif")
-    ani.save(temp_gif.name, writer="pillow", fps=10)
-
-    return temp_gif.name
+import time
+from scipy.optimize import minimize
 
 # Streamlit UI
-st.title("🔧 Mechanism Simulator")
+st.title("Physikalisch korrekte Simulation der Viergelenkkette")
+st.sidebar.header("Parameter einstellen")
 
-mode = st.radio("Modus wählen:", ["Neuer Mechanismus", "Gespeicherten Mechanismus laden"])
+# Einstellbare Parameter für die Simulation
+theta_start = np.radians(st.sidebar.slider("Startwinkel (°)", 0, 360, 0))
+theta_speed = np.radians(st.sidebar.slider("Winkelgeschwindigkeit (°/Frame)", 1, 10, 2))
+frames = st.sidebar.slider("Anzahl der Frames", 50, 300, 100)
 
-if mode == "Neuer Mechanismus":
-    # Eingabe für den Mechanismus
-    name = st.text_input("Mechanismus Name", value="Viergelenkgetriebe")
-    num_joints = st.number_input("Anzahl der Gelenke (ohne Mittelpunkt)", min_value=2, step=1, value=3)
+# Definition der Fixpunkte (entspricht den Bildern)
+p0 = np.array([0, 0])  # Fixpunkt
+c = np.array([-30, 0])  # Mittelpunkt der Kreisbewegung
 
-    # Mittelpunkt-Eingabe
-    st.write("### Mittelpunkt auswählen:")
-    col1, col2 = st.columns(2)
-    with col1:
-        x_c = st.number_input("Mittelpunkt X", value=0)
-    with col2:
-        y_c = st.number_input("Mittelpunkt Y", value=0)
+# Startkonfiguration der Punkte
+p1 = np.array([10, 35])
+p2 = np.array([-25, 10])
 
-    radius = st.number_input("Radius der Rotation", min_value=1.0, value=10.0)
-    start_angle = st.slider("Startwinkel (°)", 0, 360, 0)
+# Berechnung der initialen Längen (wie in den Bildern)
+def calculate_lengths(p0, p1, p2, c):
+    L1 = np.linalg.norm(p2 - c)  # Länge der Kurbel
+    L2 = np.linalg.norm(p1 - p0)  # Länge von p0 zu p1
+    L3 = np.linalg.norm(p1 - p2)  # Länge von p1 zu p2
+    return L1, L2, L3
 
-    # Gelenk 1 auf der Kreisbahn
-    x_start = x_c + radius * np.cos(np.radians(start_angle))
-    y_start = y_c + radius * np.sin(np.radians(start_angle))
+L1, L2, L3 = calculate_lengths(p0, p1, p2, c)
 
-    joints = [(x_c, y_c), (x_start, y_start)]
-    joint_positions = []
-    fixed_joints = []
+# Berechnet die neue Position von p2 basierend auf der Drehung um c
+def compute_p2(theta):
+    x = c[0] + L1 * np.cos(theta)
+    y = c[1] + L1 * np.sin(theta)
+    return np.array([x, y])
 
-    # Restliche Gelenke
-    st.write("### Gelenkpunkte auswählen:")
-    for i in range(2, num_joints + 1):
-        col1, col2, col3 = st.columns([3, 3, 1])
-        with col1:
-            x = st.number_input(f"Gelenk {i} X", value=i * 10, key=f"x{i}")
-        with col2:
-            y = st.number_input(f"Gelenk {i} Y", value=i * 5, key=f"y{i}")
-        with col3:
-            is_fixed = st.checkbox(f"Fix", key=f"fix{i}")
+# Optimierungsfunktion für die Berechnung von p1
+def optimize_p1(p2_new):
+    def error_function(p1_guess):
+        err1 = np.linalg.norm(p1_guess - p0) - L2
+        err2 = np.linalg.norm(p1_guess - p2_new) - L3
+        return err1**2 + err2**2  # Fehler minimieren
 
-        joint_positions.append((x, y))
-        fixed_joints.append(is_fixed)
+    p1_init = p1  # Startwert für Optimierung
+    result = minimize(error_function, p1_init, method="BFGS")
 
-    joints.extend(joint_positions)
-
-    # **Speicher-Button**
-    if st.button("💾 Mechanismus speichern"):
-        save_mechanism(name, joints, fixed_joints, radius, start_angle)
-        st.success("Mechanismus erfolgreich gespeichert!")
-
-else:
-    # 🟢 **Gespeicherten Mechanismus laden**
-    saved_mechanisms = load_mechanisms()
-    valid_mechanisms = [m for m in saved_mechanisms if "name" in m]
-
-    if valid_mechanisms:
-        selected_mechanism = st.selectbox("Gespeicherte Mechanismen:", [m["name"] for m in valid_mechanisms])
-        mechanism_data = next(m for m in valid_mechanisms if m["name"] == selected_mechanism)
-
-        name = mechanism_data["name"]
-        joints = mechanism_data["joints"]
-        fixed_joints = mechanism_data["fixed_joints"]
-        radius = mechanism_data["radius"]
-        start_angle = mechanism_data["start_angle"]
-
-        st.write(f"🔄 **Mechanismus {name} geladen!**")
-
+    if result.success:
+        return result.x
     else:
-        st.warning("⚠️ Keine gespeicherten Mechanismen gefunden.")
-        st.stop()
+        st.error("Keine gültige Gelenkkonfiguration gefunden!")
+        return None
 
-# **Simulation starten**
-if st.button("▶️ Simulation starten"):
-    try:
-        simulation_data = compute_mechanism_motion(joints, fixed_joints, radius, start_angle)
-        gif_path = plot_mechanism_animation(joints, simulation_data)
-        st.image(gif_path, caption="Mechanism Animation")
-        os.remove(gif_path)
-    except Exception as e:
-        st.error(f"Fehler bei der Simulation: {e}")
+# Streamlit Platzhalter für Animation
+plot_container = st.empty()
+
+# Simulation durchlaufen
+theta_vals = np.linspace(theta_start, theta_start + frames * theta_speed, frames)
+
+for theta in theta_vals:
+    p2_new = compute_p2(theta)
+    p1_new = optimize_p1(p2_new)
+
+    if p1_new is None:
+        break  # Falls keine Lösung gefunden wird, stoppe die Simulation
+
+    # Zeichnen der Mechanismus-Bewegung
+    fig, ax = plt.subplots()
+    ax.set_xlim(-40, 40)
+    ax.set_ylim(-40, 40)
+    
+    x_vals = [p0[0], p1_new[0], p2_new[0], c[0]]
+    y_vals = [p0[1], p1_new[1], p2_new[1], c[1]]
+    
+    ax.plot(x_vals[:3], y_vals[:3], 'o-', lw=3, markersize=8)  # Gelenke p0 → p1 → p2
+    ax.plot([p2_new[0], c[0]], [p2_new[1], c[1]], 'o-', lw=3, markersize=8, color="red")  # Verbindung p2 → c
+
+    # Anzeige aktualisieren
+    plot_container.pyplot(fig)
+    plt.close(fig)
+    time.sleep(0.05)  # Geschwindigkeitssteuerung
