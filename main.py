@@ -4,79 +4,127 @@ import matplotlib.pyplot as plt
 import time
 from scipy.optimize import minimize
 
-# Streamlit UI
-st.title("Physikalisch korrekte Simulation der Viergelenkkette")
-st.sidebar.header("Parameter einstellen")
+st.title("Simulation eines Viergelenk-Mechanismus")
+st.sidebar.header("Mechanismus Konfiguration")
 
-# Einstellbare Parameter für die Simulation
-theta_start = np.radians(st.sidebar.slider("Startwinkel (°)", 0, 360, 0))
-theta_speed = np.radians(st.sidebar.slider("Winkelgeschwindigkeit (°/Frame)", 1, 10, 2))
-frames = st.sidebar.slider("Anzahl der Frames", 50, 300, 100)
+start_simulation = st.sidebar.button("▶ Simulation starten", key="start_button")
 
-# Definition der Fixpunkte (entspricht den Bildern)
-p0 = np.array([0, 0])  # Fixpunkt
-c = np.array([-30, 0])  # Mittelpunkt der Kreisbewegung
+if "simulation_running" not in st.session_state:
+    st.session_state.simulation_running = False
+if "scale" not in st.session_state:
+    st.session_state.scale = 100  # Standardwert für Skalierung
 
-# Startkonfiguration der Punkte
-p1 = np.array([10, 35])
-p2 = np.array([-25, 10])
+if start_simulation:
+    st.session_state.simulation_running = not st.session_state.simulation_running
 
-# Berechnung der initialen Längen (wie in den Bildern)
-def calculate_lengths(p0, p1, p2, c):
-    L1 = np.linalg.norm(p2 - c)  # Länge der Kurbel
-    L2 = np.linalg.norm(p1 - p0)  # Länge von p0 zu p1
-    L3 = np.linalg.norm(p1 - p2)  # Länge von p1 zu p2
-    return L1, L2, L3
+# Skalierung anpassen
+scale = st.sidebar.slider("Skalierung anpassen", 40, 500, st.session_state.scale, step=10)
+st.session_state.scale = scale
 
-L1, L2, L3 = calculate_lengths(p0, p1, p2, c)
+mid_x = st.sidebar.number_input("Mittelpunkt X", value=0.0, step=1.0)
+mid_y = st.sidebar.number_input("Mittelpunkt Y", value=0.0, step=1.0)
+fixed_point = np.array([mid_x, mid_y])
 
-# Berechnet die neue Position von p2 basierend auf der Drehung um c
-def compute_p2(theta):
-    x = c[0] + L1 * np.cos(theta)
-    y = c[1] + L1 * np.sin(theta)
-    return np.array([x, y])
+radius = st.sidebar.number_input("Rotationsradius für Gelenk 2", value=15.0, min_value=1.0, max_value=100.0, step=0.5)
+start_angle = np.radians(st.sidebar.slider("Startwinkel von Gelenk 2 (Grad)", 0, 360, 0))
+speed = np.radians(st.sidebar.slider("Geschwindigkeit (°/Frame)", 1, 10, 2))
 
-# Optimierungsfunktion für die Berechnung von p1
-def optimize_p1(p2_new):
-    def error_function(p1_guess):
-        err1 = np.linalg.norm(p1_guess - p0) - L2
-        err2 = np.linalg.norm(p1_guess - p2_new) - L3
-        return err1**2 + err2**2  # Fehler minimieren
+def compute_gelenk_2(theta):
+    return fixed_point + radius * np.array([np.cos(theta), np.sin(theta)])
 
-    p1_init = p1  # Startwert für Optimierung
-    result = minimize(error_function, p1_init, method="BFGS")
+default_joints = {
+    1: fixed_point,
+    2: compute_gelenk_2(start_angle),
+    3: np.array([10, 35]),
+    4: np.array([-25, 10])
+}
 
-    if result.success:
-        return result.x
-    else:
-        st.error("Keine gültige Gelenkkonfiguration gefunden!")
+num_joints = st.sidebar.number_input("Anzahl der Gelenke", min_value=4, max_value=15, value=len(default_joints), step=1)
+num_rods = st.sidebar.number_input("Anzahl der Stäbe", min_value=3, max_value=num_joints*(num_joints-1)//2, value=4, step=1)
+
+joints = default_joints.copy()
+fixed_joints = {1}
+
+st.sidebar.subheader("Gelenke Konfiguration")
+for j in range(3, num_joints + 1):
+    with st.sidebar.expander(f"Gelenk {j} bearbeiten"):
+        x = st.number_input(f"Gelenk {j} - X", value=float(joints.get(j, np.array([0, 0]))[0]))
+        y = st.number_input(f"Gelenk {j} - Y", value=float(joints.get(j, np.array([0, 0]))[1]))
+        fixed = st.checkbox(f"Gelenk {j} fixiert?", value=(j in fixed_joints))
+        joints[j] = np.array([x, y])
+        if fixed:
+            fixed_joints.add(j)
+        elif j in fixed_joints:
+            fixed_joints.remove(j)
+
+st.sidebar.subheader("Stäbe Konfiguration")
+rods = []
+for i in range(1, num_rods + 1):
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        joint1 = st.selectbox(f"Stab {i} - Gelenk 1", list(joints.keys()), key=f"rod_{i}_j1")
+    with col2:
+        joint2 = st.selectbox(f"Stab {i} - Gelenk 2", list(joints.keys()), key=f"rod_{i}_j2")
+    rods.append((joint1, joint2))
+
+def calculate_lengths(joints, rods):
+    return {pair: np.linalg.norm(joints[pair[0]] - joints[pair[1]]) for pair in rods}
+
+initial_lengths = calculate_lengths(joints, rods)
+
+def optimize_joints():
+    moving_joints = [j for j in joints if j not in fixed_joints and j != 2]
+    if not moving_joints:
         return None
 
-# Streamlit Platzhalter für Animation
+    def error_function(p_guess):
+        error = 0
+        positions = {j: p_guess[i*2:i*2+2] for i, j in enumerate(moving_joints)}
+        for (j1, j2) in rods:
+            expected_length = initial_lengths[(j1, j2)]
+            if j1 in positions and j2 in positions:
+                actual_length = np.linalg.norm(positions[j1] - positions[j2])
+            elif j1 in positions:
+                actual_length = np.linalg.norm(positions[j1] - joints[j2])
+            elif j2 in positions:
+                actual_length = np.linalg.norm(joints[j1] - positions[j2])
+            else:
+                actual_length = expected_length
+            error += (actual_length - expected_length) ** 2
+        return error
+
+    initial_guess = np.concatenate([joints[j] for j in moving_joints])
+    result = minimize(error_function, initial_guess, method="BFGS")
+    if result.success:
+        optimized_positions = result.x.reshape(-1, 2)
+        for i, j in enumerate(moving_joints):
+            joints[j] = optimized_positions[i]
+        return joints
+    else:
+        return None
+
 plot_container = st.empty()
+theta = start_angle
 
-# Simulation durchlaufen
-theta_vals = np.linspace(theta_start, theta_start + frames * theta_speed, frames)
+while True:
+    if st.session_state.simulation_running:
+        theta += speed
+        joints[1] = np.array([mid_x, mid_y])
+        joints[2] = compute_gelenk_2(theta)
+        updated_joints = optimize_joints()
+        if updated_joints is None:
+            continue
 
-for theta in theta_vals:
-    p2_new = compute_p2(theta)
-    p1_new = optimize_p1(p2_new)
-
-    if p1_new is None:
-        break  # Falls keine Lösung gefunden wird, stoppe die Simulation
-
-    # Zeichnen der Mechanismus-Bewegung
     fig, ax = plt.subplots()
-    ax.set_xlim(-40, 40)
-    ax.set_ylim(-40, 40)
-    
-    x_vals = [p0[0], p1_new[0], p2_new[0], c[0]]
-    y_vals = [p0[1], p1_new[1], p2_new[1], c[1]]
-    
-    ax.plot(x_vals[:3], y_vals[:3], 'o-', lw=3, markersize=8)  # Gelenke p0 → p1 → p2
-    ax.plot([p2_new[0], c[0]], [p2_new[1], c[1]], 'o-', lw=3, markersize=8, color="red")  # Verbindung p2 → c
+    ax.set_xlim([-scale / 2, scale / 2])
+    ax.set_ylim([-scale / 2, scale / 2])
+    ax.set_aspect('equal')
 
-    # Anzeige aktualisieren
+    for joint1, joint2 in rods:
+        x_vals = [joints[joint1][0], joints[joint2][0]]
+        y_vals = [joints[joint1][1], joints[joint2][1]]
+        ax.plot(x_vals, y_vals, 'o-', lw=3, markersize=8)
+
     plot_container.pyplot(fig)
     plt.close(fig)
-    time.sleep(0.05)  # Geschwindigkeitssteuerung
+    time.sleep(0.05)
