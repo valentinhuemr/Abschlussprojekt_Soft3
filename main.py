@@ -1,130 +1,98 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
-import time
-from scipy.optimize import minimize
+from mechanism import Mechanism
+from storage import save_mechanism, load_mechanism, get_all_mechanism_names
+from simulation import simulate_mechanism
 
 st.title("Simulation eines Viergelenk-Mechanismus")
 st.sidebar.header("Mechanismus Konfiguration")
 
-start_simulation = st.sidebar.button("▶ Simulation starten", key="start_button")
+# Gespeicherte Mechanismen abrufen & Dropdown-Menü anzeigen
+saved_mechanisms = get_all_mechanism_names()
+selected_mechanism = st.sidebar.selectbox("📂 Gespeicherte Mechanismen", ["-"] + saved_mechanisms)
 
-if "simulation_running" not in st.session_state:
-    st.session_state.simulation_running = False
-if "scale" not in st.session_state:
-    st.session_state.scale = 100  # Standardwert für Skalierung
+# **Platzhalter für UI-Felder (Standardwerte)**
+if "loaded_data" not in st.session_state:
+    st.session_state.loaded_data = None
 
-if start_simulation:
-    st.session_state.simulation_running = not st.session_state.simulation_running
+if st.sidebar.button("📂 Laden"):
+    if selected_mechanism != "-":
+        loaded_mech = load_mechanism(selected_mechanism)
+        if loaded_mech:
+            st.session_state.loaded_data = {
+                "mid_x": loaded_mech.fixed_point[0],
+                "mid_y": loaded_mech.fixed_point[1],
+                "radius": loaded_mech.radius,
+                "start_angle": np.degrees(loaded_mech.theta),
+                "speed": np.degrees(loaded_mech.speed),
+                "num_joints": len(loaded_mech.joints),
+                "num_rods": len(loaded_mech.rods),
+                "joints": loaded_mech.joints,
+                "fixed_joints": loaded_mech.fixed_joints,
+                "rods": loaded_mech.rods
+            }
+            st.sidebar.success(f"Mechanismus '{selected_mechanism}' geladen!")
+    else:
+        st.sidebar.error("Bitte einen Mechanismus auswählen.")
 
-# Skalierung anpassen
-scale = st.sidebar.slider("Skalierung anpassen", 40, 500, st.session_state.scale, step=10)
-st.session_state.scale = scale
+# **UI-Werte setzen**
+mid_x = st.sidebar.number_input("Mittelpunkt X", value=st.session_state.loaded_data["mid_x"] if st.session_state.loaded_data else 0.0, step=1.0)
+mid_y = st.sidebar.number_input("Mittelpunkt Y", value=st.session_state.loaded_data["mid_y"] if st.session_state.loaded_data else 0.0, step=1.0)
+radius = st.sidebar.number_input("Rotationsradius für Gelenk 2", value=st.session_state.loaded_data["radius"] if st.session_state.loaded_data else 15.0, min_value=1.0, max_value=100.0, step=0.5)
+start_angle = st.sidebar.slider("Startwinkel von Gelenk 2 (Grad)", 0, 360, int(st.session_state.loaded_data["start_angle"]) if st.session_state.loaded_data else 0)
+speed = st.sidebar.slider("Geschwindigkeit (°/Frame)", 1, 10, int(st.session_state.loaded_data["speed"]) if st.session_state.loaded_data else 2)
 
-mid_x = st.sidebar.number_input("Mittelpunkt X", value=0.0, step=1.0)
-mid_y = st.sidebar.number_input("Mittelpunkt Y", value=0.0, step=1.0)
-fixed_point = np.array([mid_x, mid_y])
+num_joints = st.sidebar.number_input("Anzahl der Gelenke", min_value=4, max_value=15, value=st.session_state.loaded_data["num_joints"] if st.session_state.loaded_data else 4, step=1)
+num_rods = st.sidebar.number_input("Anzahl der Stäbe", min_value=3, max_value=num_joints*(num_joints-1)//2, value=st.session_state.loaded_data["num_rods"] if st.session_state.loaded_data else 4, step=1)
 
-radius = st.sidebar.number_input("Rotationsradius für Gelenk 2", value=15.0, min_value=1.0, max_value=100.0, step=0.5)
-start_angle = np.radians(st.sidebar.slider("Startwinkel von Gelenk 2 (Grad)", 0, 360, 0))
-speed = np.radians(st.sidebar.slider("Geschwindigkeit (°/Frame)", 1, 10, 2))
-
-def compute_gelenk_2(theta):
-    return fixed_point + radius * np.array([np.cos(theta), np.sin(theta)])
-
-default_joints = {
-    1: fixed_point,
-    2: compute_gelenk_2(start_angle),
-    3: np.array([10, 35]),
-    4: np.array([-25, 10])
-}
-
-num_joints = st.sidebar.number_input("Anzahl der Gelenke", min_value=4, max_value=15, value=len(default_joints), step=1)
-num_rods = st.sidebar.number_input("Anzahl der Stäbe", min_value=3, max_value=num_joints*(num_joints-1)//2, value=4, step=1)
-
-joints = default_joints.copy()
+joints = {1: np.array([mid_x, mid_y])}  # Gelenk 1 existiert, wird aber nicht angezeigt
 fixed_joints = {1}
 
 st.sidebar.subheader("Gelenke Konfiguration")
 for j in range(3, num_joints + 1):
     with st.sidebar.expander(f"Gelenk {j} bearbeiten"):
-        x = st.number_input(f"Gelenk {j} - X", value=float(joints.get(j, np.array([0, 0]))[0]))
-        y = st.number_input(f"Gelenk {j} - Y", value=float(joints.get(j, np.array([0, 0]))[1]))
-        fixed = st.checkbox(f"Gelenk {j} fixiert?", value=(j in fixed_joints))
+        x = st.number_input(f"Gelenk {j} - X", value=st.session_state.loaded_data["joints"][j][0] if st.session_state.loaded_data and j in st.session_state.loaded_data["joints"] else 0.0, step=1.0, key=f"j_{j}_x")
+        y = st.number_input(f"Gelenk {j} - Y", value=st.session_state.loaded_data["joints"][j][1] if st.session_state.loaded_data and j in st.session_state.loaded_data["joints"] else 0.0, step=1.0, key=f"j_{j}_y")
+        fixed = st.checkbox(f"Gelenk {j} fixiert?", value=j in st.session_state.loaded_data["fixed_joints"] if st.session_state.loaded_data else False, key=f"j_{j}_fixed")
         joints[j] = np.array([x, y])
         if fixed:
             fixed_joints.add(j)
-        elif j in fixed_joints:
-            fixed_joints.remove(j)
 
+# **Gelenk 2 als ausgegrauter Wert anzeigen**
+st.sidebar.subheader("Gelenk 2 (Berechnet)")
+gelenk_2_x = mid_x + radius * np.cos(np.radians(start_angle))
+gelenk_2_y = mid_y + radius * np.sin(np.radians(start_angle))
+st.sidebar.text(f"X: {gelenk_2_x:.2f}, Y: {gelenk_2_y:.2f}")
+joints[2] = np.array([gelenk_2_x, gelenk_2_y])
+
+# **Stäbe werden geladen & gesetzt**
 st.sidebar.subheader("Stäbe Konfiguration")
 rods = []
+
+all_joint_keys = list(joints.keys())
+if 1 not in all_joint_keys:
+    all_joint_keys.insert(0, 1)
+if 2 not in all_joint_keys:
+    all_joint_keys.insert(1, 2)
+
 for i in range(1, num_rods + 1):
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        joint1 = st.selectbox(f"Stab {i} - Gelenk 1", list(joints.keys()), key=f"rod_{i}_j1")
-    with col2:
-        joint2 = st.selectbox(f"Stab {i} - Gelenk 2", list(joints.keys()), key=f"rod_{i}_j2")
+    default_rod = st.session_state.loaded_data["rods"][i-1] if st.session_state.loaded_data and i-1 < len(st.session_state.loaded_data["rods"]) else (1, 2)
+    default_joint1 = default_rod[0] if default_rod[0] in all_joint_keys else all_joint_keys[0]
+    default_joint2 = default_rod[1] if default_rod[1] in all_joint_keys else all_joint_keys[0]
+
+    joint1 = st.sidebar.selectbox(f"Stab {i} - Gelenk 1", all_joint_keys, index=all_joint_keys.index(default_joint1), key=f"rod_{i}_j1")
+    joint2 = st.sidebar.selectbox(f"Stab {i} - Gelenk 2", all_joint_keys, index=all_joint_keys.index(default_joint2), key=f"rod_{i}_j2")
+
     rods.append((joint1, joint2))
 
-def calculate_lengths(joints, rods):
-    return {pair: np.linalg.norm(joints[pair[0]] - joints[pair[1]]) for pair in rods}
+# **Mechanismus erstellen**
+mech = Mechanism([mid_x, mid_y], radius, start_angle, speed, joints, fixed_joints, rods)
 
-initial_lengths = calculate_lengths(joints, rods)
+# **Mechanismus speichern**
+name = st.sidebar.text_input("Mechanismus Name")
+if st.sidebar.button("💾 Speichern"):
+    save_mechanism(mech, name)
 
-def optimize_joints():
-    moving_joints = [j for j in joints if j not in fixed_joints and j != 2]
-    if not moving_joints:
-        return None
-
-    def error_function(p_guess):
-        error = 0
-        positions = {j: p_guess[i*2:i*2+2] for i, j in enumerate(moving_joints)}
-        for (j1, j2) in rods:
-            expected_length = initial_lengths[(j1, j2)]
-            if j1 in positions and j2 in positions:
-                actual_length = np.linalg.norm(positions[j1] - positions[j2])
-            elif j1 in positions:
-                actual_length = np.linalg.norm(positions[j1] - joints[j2])
-            elif j2 in positions:
-                actual_length = np.linalg.norm(joints[j1] - positions[j2])
-            else:
-                actual_length = expected_length
-            error += (actual_length - expected_length) ** 2
-        return error
-
-    initial_guess = np.concatenate([joints[j] for j in moving_joints])
-    result = minimize(error_function, initial_guess, method="BFGS")
-    if result.success:
-        optimized_positions = result.x.reshape(-1, 2)
-        for i, j in enumerate(moving_joints):
-            joints[j] = optimized_positions[i]
-        return joints
-    else:
-        return None
-
-plot_container = st.empty()
-theta = start_angle
-
-while True:
-    if st.session_state.simulation_running:
-        theta += speed
-        joints[1] = np.array([mid_x, mid_y])
-        joints[2] = compute_gelenk_2(theta)
-        updated_joints = optimize_joints()
-        if updated_joints is None:
-            continue
-
-    fig, ax = plt.subplots()
-    ax.set_xlim([-scale / 2, scale / 2])
-    ax.set_ylim([-scale / 2, scale / 2])
-    ax.set_aspect('equal')
-
-    for joint1, joint2 in rods:
-        x_vals = [joints[joint1][0], joints[joint2][0]]
-        y_vals = [joints[joint1][1], joints[joint2][1]]
-        ax.plot(x_vals, y_vals, 'o-', lw=3, markersize=8)
-
-    plot_container.pyplot(fig)
-    plt.close(fig)
-    time.sleep(0.05)
+# **Simulation starten**
+if st.button("▶️ Simulation starten"):
+    simulate_mechanism(mech, 100)
