@@ -5,6 +5,7 @@ from storage import save_mechanism, load_mechanism, get_all_mechanism_names
 from simulation import simulate_mechanism
 import matplotlib.pyplot as plt
 import time
+import pandas as pd
 
 st.title("Simulation eines Viergelenk-Mechanismus")
 st.sidebar.header("Mechanismus Konfiguration")
@@ -93,3 +94,34 @@ if st.sidebar.button("💾 Speichern"):
 
 if st.button("▶️ Simulation starten"):
     simulate_mechanism(mech, 100)
+
+
+
+if st.button("🔄 Simulation durchführen & CSV generieren"):
+    trajectory_data = simulate_mechanism(mech, 100, return_trajectory=True)
+
+    if trajectory_data:
+        # Struktur für CSV: Jede Zeile speichert alle Gelenke für einen Frame
+        csv_data = {"Frame": []}
+        active_joints = [j for j in trajectory_data.keys() if mech.show_trajectory.get(j, False)]
+
+        for j in active_joints:
+            csv_data[f"Joint {j} X"] = []
+            csv_data[f"Joint {j} Y"] = []
+
+        num_frames = len(next(iter(trajectory_data.values())))  # Anzahl der Frames
+
+        for frame in range(num_frames):
+            csv_data["Frame"].append(frame)
+            for j in active_joints:
+                csv_data[f"Joint {j} X"].append(trajectory_data[j][frame][0])
+                csv_data[f"Joint {j} Y"].append(trajectory_data[j][frame][1])
+
+        # Speichere Daten als CSV
+        df = pd.DataFrame(csv_data)
+        csv_filename = "mechanism_trajectory.csv"
+        df.to_csv(csv_filename, index=False)
+
+        # Download-Button für CSV-Datei
+        with open(csv_filename, "rb") as f:
+            st.download_button("📥 Bahnkurven als CSV herunterladen", f, file_name=csv_filename, mime="text/csv")
