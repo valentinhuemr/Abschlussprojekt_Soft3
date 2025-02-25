@@ -1,23 +1,28 @@
+import cv2
 import streamlit as st
 import numpy as np
 from mechanism import Mechanism
-from storage import save_mechanism, load_mechanism, get_all_mechanism_names
+from storage import save_mechanism, load_mechanism, get_all_mechanism_names, delete_mechanism
 from simulation import simulate_mechanism
 import matplotlib.pyplot as plt
 import time
 import pandas as pd
 
+
 st.title("Simulation eines Viergelenk-Mechanismus")
 st.sidebar.header("Mechanismus Konfiguration")
 
+st.sidebar.header("⚙ Mechanismus-Verwaltung")
+
 # Gespeicherte Mechanismen abrufen & Dropdown-Menü anzeigen
 saved_mechanisms = get_all_mechanism_names()
-selected_mechanism = st.sidebar.selectbox("📂 Gespeicherte Mechanismen", ["-"] + saved_mechanisms)
+selected_mechanism = st.sidebar.selectbox("📂 Gespeicherte Mechanismen:", ["-"] + saved_mechanisms)
 
 # **Platzhalter für UI-Felder (Standardwerte)**
 if "loaded_data" not in st.session_state:
     st.session_state.loaded_data = None
 
+# **Laden-Button**
 if st.sidebar.button("📂 Laden"):
     if selected_mechanism != "-":
         loaded_mech = load_mechanism(selected_mechanism)
@@ -34,9 +39,23 @@ if st.sidebar.button("📂 Laden"):
                 "fixed_joints": loaded_mech.fixed_joints,
                 "rods": loaded_mech.rods
             }
-            st.sidebar.success(f"Mechanismus '{selected_mechanism}' geladen!")
+            st.sidebar.success(f"✅ Mechanismus '{selected_mechanism}' geladen!")
     else:
-        st.sidebar.error("Bitte einen Mechanismus auswählen.")
+        st.sidebar.error("⚠ Bitte einen Mechanismus auswählen.")
+
+# **Löschen-Button**
+if st.sidebar.button("🗑 Löschen"):
+    if selected_mechanism != "-":
+        delete_mechanism(selected_mechanism)
+    else:
+        st.sidebar.error("⚠ Bitte einen Mechanismus zum Löschen auswählen.")
+
+
+# 📏 Manuelle Eingabe für die Plotgröße in X- und Y-Richtung
+plot_size_x = st.sidebar.number_input("📐 Plot-Breite (X)", min_value=40, max_value=500, value=100, step=10)
+plot_size_y = st.sidebar.number_input("📏 Plot-Höhe (Y)", min_value=40, max_value=500, value=100, step=10)
+
+
 
 # **UI-Werte setzen**
 mid_x = st.sidebar.number_input("Mittelpunkt X", value=st.session_state.loaded_data["mid_x"] if st.session_state.loaded_data else 0.0, step=1.0)
@@ -92,16 +111,22 @@ name = st.sidebar.text_input("Mechanismus Name")
 if st.sidebar.button("💾 Speichern"):
     save_mechanism(mech, name)
 
-if st.button("▶️ Simulation starten"):
-    simulate_mechanism(mech, 100)
 
 
 
-if st.button("🔄 Simulation durchführen & CSV generieren"):
-    trajectory_data = simulate_mechanism(mech, 100, return_trajectory=True)
+if st.button("🔄 Simulation durchführen & GIF speichern"):
+    st.session_state.clear()  
+    
+    trajectory_data, gif_filename = simulate_mechanism(
+        mech, 
+        plot_size_x=plot_size_x,  
+        plot_size_y=plot_size_y,  
+        return_trajectory=True, 
+        save_gif=True
+    )
 
     if trajectory_data:
-        # Struktur für CSV: Jede Zeile speichert alle Gelenke für einen Frame
+        # CSV-Datenstruktur vorbereiten (neu laden)
         csv_data = {"Frame": []}
         active_joints = [j for j in trajectory_data.keys() if mech.show_trajectory.get(j, False)]
 
@@ -109,7 +134,7 @@ if st.button("🔄 Simulation durchführen & CSV generieren"):
             csv_data[f"Joint {j} X"] = []
             csv_data[f"Joint {j} Y"] = []
 
-        num_frames = len(next(iter(trajectory_data.values())))  # Anzahl der Frames
+        num_frames = len(next(iter(trajectory_data.values())))  
 
         for frame in range(num_frames):
             csv_data["Frame"].append(frame)
@@ -117,11 +142,20 @@ if st.button("🔄 Simulation durchführen & CSV generieren"):
                 csv_data[f"Joint {j} X"].append(trajectory_data[j][frame][0])
                 csv_data[f"Joint {j} Y"].append(trajectory_data[j][frame][1])
 
-        # Speichere Daten als CSV
-        df = pd.DataFrame(csv_data)
+        # CSV-Datei speichern (neu laden)
         csv_filename = "mechanism_trajectory.csv"
+        df = pd.DataFrame(csv_data)
         df.to_csv(csv_filename, index=False)
 
-        # Download-Button für CSV-Datei
+        # Download-Button für CSV (neu berechnet)
         with open(csv_filename, "rb") as f:
             st.download_button("📥 Bahnkurven als CSV herunterladen", f, file_name=csv_filename, mime="text/csv")
+
+    if gif_filename:
+        # **GIF anzeigen (neu berechnet)**
+        st.image(gif_filename)
+
+        # Download-Button für GIF (neu berechnet)
+        with open(gif_filename, "rb") as f:
+            st.download_button("🎥 Simulation als GIF herunterladen", f, file_name=gif_filename, mime="image/gif")
+
