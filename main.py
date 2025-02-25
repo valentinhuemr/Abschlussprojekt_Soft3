@@ -9,7 +9,7 @@ import time
 import pandas as pd
 
 
-st.title("Simulation eines Viergelenk-Mechanismus")
+st.title("Simulation eines 2D Mechanismus")
 st.sidebar.header("Mechanismus Konfiguration")
 
 st.sidebar.header("⚙ Mechanismus-Verwaltung")
@@ -72,6 +72,14 @@ fixed_joints = {1}
 show_trajectory = {2: True}  # Gelenk 2 wird immer angezeigt
 
 st.sidebar.subheader("Gelenke Konfiguration")
+
+st.sidebar.subheader("Gelenk 2 (Berechnet)")
+gelenk_2_x = mid_x + radius * np.cos(np.radians(start_angle))
+gelenk_2_y = mid_y + radius * np.sin(np.radians(start_angle))
+st.sidebar.text(f"X: {gelenk_2_x:.2f}, Y: {gelenk_2_y:.2f}")
+joints[2] = np.array([gelenk_2_x, gelenk_2_y])
+
+
 for j in range(3, num_joints + 1):
     with st.sidebar.expander(f"Gelenk {j} bearbeiten"):
         x = st.number_input(f"Gelenk {j} - X", value=st.session_state.loaded_data["joints"][j][0] if st.session_state.loaded_data and j in st.session_state.loaded_data["joints"] else 0.0, step=1.0, key=f"j_{j}_x")
@@ -83,11 +91,6 @@ for j in range(3, num_joints + 1):
             fixed_joints.add(j)
         show_trajectory[j] = show_traj
 
-st.sidebar.subheader("Gelenk 2 (Berechnet)")
-gelenk_2_x = mid_x + radius * np.cos(np.radians(start_angle))
-gelenk_2_y = mid_y + radius * np.sin(np.radians(start_angle))
-st.sidebar.text(f"X: {gelenk_2_x:.2f}, Y: {gelenk_2_y:.2f}")
-joints[2] = np.array([gelenk_2_x, gelenk_2_y])
 
 st.sidebar.subheader("Stäbe Konfiguration")
 rods = []
@@ -99,9 +102,31 @@ if 2 not in all_joint_keys:
     all_joint_keys.insert(1, 2)
 
 for i in range(1, num_rods + 1):
-    default_rod = st.session_state.loaded_data["rods"][i-1] if st.session_state.loaded_data and i-1 < len(st.session_state.loaded_data["rods"]) else (1, 2)
-    joint1 = st.sidebar.selectbox(f"Stab {i} - Gelenk 1", all_joint_keys, index=all_joint_keys.index(default_rod[0]), key=f"rod_{i}_j1")
-    joint2 = st.sidebar.selectbox(f"Stab {i} - Gelenk 2", all_joint_keys, index=all_joint_keys.index(default_rod[1]), key=f"rod_{i}_j2")
+    default_rod = (
+        st.session_state.loaded_data["rods"][i-1]
+        if st.session_state.loaded_data and i-1 < len(st.session_state.loaded_data["rods"])
+        else (1, 2)
+    )
+
+    # Zwei Spalten für die Dropdowns (nebeneinander)
+    col1, col2 = st.sidebar.columns(2)
+
+    with col1:
+        joint1 = st.selectbox(
+            f"Stab {i} - Gelenk 1",
+            all_joint_keys,
+            index=all_joint_keys.index(default_rod[0]),
+            key=f"rod_{i}_j1"
+        )
+
+    with col2:
+        joint2 = st.selectbox(
+            f"Stab {i} - Gelenk 2",
+            all_joint_keys,
+            index=all_joint_keys.index(default_rod[1]),
+            key=f"rod_{i}_j2"
+        )
+
     rods.append((joint1, joint2))
 
 mech = Mechanism([mid_x, mid_y], radius, start_angle, speed, joints, fixed_joints, rods)

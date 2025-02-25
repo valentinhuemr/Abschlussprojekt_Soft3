@@ -23,7 +23,7 @@ def simulate_mechanism(mechanism, plot_size_x=100, plot_size_y=100, return_traje
     ax.set_yticks(np.linspace(-plot_size_y / 2, plot_size_y / 2, num=5))
 
     # **Plot-Beschriftungen und Gitternetz**
-    ax.set_title(f"Simulation des Viergelenk-Mechanismus\nPlotgröße: X={plot_size_x}, Y={plot_size_y}", fontsize=12, fontweight="bold")
+    ax.set_title(f"Simulation \nPlotgröße: X={plot_size_x}, Y={plot_size_y}", fontsize=12, fontweight="bold")
     ax.set_xlabel("X-Achse (mm)", fontsize=10)
     ax.set_ylabel("Y-Achse (mm)", fontsize=10)
     ax.grid(True, linestyle="--", alpha=0.7)  
@@ -52,7 +52,7 @@ def simulate_mechanism(mechanism, plot_size_x=100, plot_size_y=100, return_traje
             
 
             # **Achsenbeschriftung aktualisieren**
-            ax.set_title(f"Simulation des Viergelenk-Mechanismus\nPlotgröße: X={plot_size_x}, Y={plot_size_y}", fontsize=12, fontweight="bold")
+            ax.set_title(f"Simulation \nPlotgröße: X={plot_size_x}, Y={plot_size_y}", fontsize=12, fontweight="bold")
             ax.set_xlabel("X-Achse (mm)", fontsize=10)
             ax.set_ylabel("Y-Achse (mm)", fontsize=10)
             ax.grid(True, linestyle="--", alpha=0.7)
