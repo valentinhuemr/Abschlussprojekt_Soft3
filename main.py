@@ -134,48 +134,53 @@ if st.sidebar.button("💾 Speichern"):
 
 
 
-if st.button("🔄 Simulation durchführen / CSV & GIF erstellen"):
-   
+# **Simulation starten, wenn der Button gedrückt wird**
+if st.button("🔄 Simulation durchführen & GIF speichern"):
     
-    trajectory_data, gif_filename = simulate_mechanism(
-        mech, 
-        plot_size_x=plot_size_x,  
-        plot_size_y=plot_size_y,  
-        return_trajectory=True, 
-        save_gif=True
-    )
+    # **Gelenkpositionen optimieren und Längenfehler überprüfen**
+    optimized_joints = mech.optimize_joints()
+    
+    if optimized_joints is None:
+        st.error("❌ Mechanismus ist kinematisch nicht lösbar oder Längenfehler erkannt!")
+    else:
+        # **Falls die Optimierung erfolgreich war, Simulation durchführen**
+        trajectory_data, gif_filename = simulate_mechanism(
+            mech, 
+            plot_size_x=plot_size_x,  
+            plot_size_y=plot_size_y,  
+            return_trajectory=True, 
+            save_gif=True
+        )
 
-    if trajectory_data:
-        # CSV-Datenstruktur vorbereiten (neu laden)
-        csv_data = {"Frame": []}
-        active_joints = [j for j in trajectory_data.keys() if mech.show_trajectory.get(j, False)]
+        if trajectory_data:
+            # CSV-Daten vorbereiten
+            csv_data = {"Frame": []}
+            active_joints = [j for j in trajectory_data.keys() if mech.show_trajectory.get(j, False)]
 
-        for j in active_joints:
-            csv_data[f"Joint {j} X"] = []
-            csv_data[f"Joint {j} Y"] = []
-
-        num_frames = len(next(iter(trajectory_data.values())))  
-
-        for frame in range(num_frames):
-            csv_data["Frame"].append(frame)
             for j in active_joints:
-                csv_data[f"Joint {j} X"].append(trajectory_data[j][frame][0])
-                csv_data[f"Joint {j} Y"].append(trajectory_data[j][frame][1])
+                csv_data[f"Joint {j} X"] = []
+                csv_data[f"Joint {j} Y"] = []
 
-        # CSV-Datei speichern (neu laden)
-        csv_filename = "mechanism_trajectory.csv"
-        df = pd.DataFrame(csv_data)
-        df.to_csv(csv_filename, index=False)
+            num_frames = len(next(iter(trajectory_data.values())))
 
-        # Download-Button für CSV (neu berechnet)
-        with open(csv_filename, "rb") as f:
-            st.download_button("📥 Bahnkurven als CSV herunterladen", f, file_name=csv_filename, mime="text/csv")
+            for frame in range(num_frames):
+                csv_data["Frame"].append(frame)
+                for j in active_joints:
+                    csv_data[f"Joint {j} X"].append(trajectory_data[j][frame][0])
+                    csv_data[f"Joint {j} Y"].append(trajectory_data[j][frame][1])
 
-    if gif_filename:
-        # **GIF anzeigen (neu berechnet)**
-        st.image(gif_filename)
+            # CSV-Datei speichern und Download-Link anzeigen
+            csv_filename = "mechanism_trajectory.csv"
+            df = pd.DataFrame(csv_data)
+            df.to_csv(csv_filename, index=False)
 
-        # Download-Button für GIF (neu berechnet)
-        with open(gif_filename, "rb") as f:
-            st.download_button("🎥 Simulation als GIF herunterladen", f, file_name=gif_filename, mime="image/gif")
+            with open(csv_filename, "rb") as f:
+                st.download_button("📥 Bahnkurven als CSV herunterladen", f, file_name=csv_filename, mime="text/csv")
 
+        if gif_filename:
+            # **GIF anzeigen**
+            st.image(gif_filename)
+
+            # **GIF-Download-Button anzeigen**
+            with open(gif_filename, "rb") as f:
+                st.download_button("🎥 Simulation als GIF herunterladen", f, file_name=gif_filename, mime="image/gif")
