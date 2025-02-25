@@ -14,8 +14,9 @@ def simulate_mechanism(mechanism, plot_size_x=100, plot_size_y=100, return_traje
     canvas = FigureCanvas(fig)  
 
     # **Achsen skalieren basierend auf Benutzerwerten**
-    ax.set_xlim(-plot_size_x / 2, plot_size_x / 2)  
-    ax.set_ylim(-plot_size_y / 2, plot_size_y / 2)  
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.set_xlim([-plot_size_x / 2, plot_size_x / 2])
+    ax.set_ylim([-plot_size_y / 2, plot_size_y / 2])
 
     # **Achsen-Ticks automatisch setzen für bessere Lesbarkeit**
     ax.set_xticks(np.linspace(-plot_size_x / 2, plot_size_x / 2, num=5))
@@ -34,6 +35,7 @@ def simulate_mechanism(mechanism, plot_size_x=100, plot_size_y=100, return_traje
     # GIF-Setup
     gif_filename = "mechanism_simulation.gif"
     frames = []  
+    
 
     while mechanism.theta - initial_theta < 2 * np.pi:  
         mechanism.theta += mechanism.speed  
@@ -46,6 +48,8 @@ def simulate_mechanism(mechanism, plot_size_x=100, plot_size_y=100, return_traje
             ax.set_ylim(-plot_size_y / 2, plot_size_y / 2)  
             ax.set_xticks(np.linspace(-plot_size_x / 2, plot_size_x / 2, num=5))
             ax.set_yticks(np.linspace(-plot_size_y / 2, plot_size_y / 2, num=5))
+
+            
 
             # **Achsenbeschriftung aktualisieren**
             ax.set_title(f"Simulation des Viergelenk-Mechanismus\nPlotgröße: X={plot_size_x}, Y={plot_size_y}", fontsize=12, fontweight="bold")

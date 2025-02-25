@@ -107,6 +107,26 @@ for i in range(1, num_rods + 1):
 mech = Mechanism([mid_x, mid_y], radius, start_angle, speed, joints, fixed_joints, rods)
 mech.show_trajectory = show_trajectory
 
+# Statische Darstellung des Mechanismus in der Ausgangsstellung
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.set_xlim([-plot_size_x / 2, plot_size_x / 2])
+ax.set_ylim([-plot_size_y / 2, plot_size_y / 2])
+ax.set_title("Ausgangsstellung des Mechanismus")
+
+# Gelenke zeichnen
+for j, coord in joints.items():
+    ax.plot(coord[0], coord[1], 'ro' if j in fixed_joints else 'bo', markersize=8)
+    ax.text(coord[0] + 2, coord[1] + 2, f"J{j}", fontsize=9, color='black')
+
+# Stäbe zeichnen
+for rod in rods:
+    j1, j2 = rod
+    p1, p2 = joints[j1], joints[j2]
+    ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'k-', lw=2)
+
+# Anzeige im Streamlit
+st.pyplot(fig)
+
 name = st.sidebar.text_input("Mechanismus Name")
 if st.sidebar.button("💾 Speichern"):
     save_mechanism(mech, name)
@@ -114,8 +134,8 @@ if st.sidebar.button("💾 Speichern"):
 
 
 
-if st.button("🔄 Simulation durchführen & GIF speichern"):
-    st.session_state.clear()  
+if st.button("🔄 Simulation durchführen / CSV & GIF erstellen"):
+   
     
     trajectory_data, gif_filename = simulate_mechanism(
         mech, 
