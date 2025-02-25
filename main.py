@@ -3,6 +3,8 @@ import numpy as np
 from mechanism import Mechanism
 from storage import save_mechanism, load_mechanism, get_all_mechanism_names
 from simulation import simulate_mechanism
+import matplotlib.pyplot as plt
+import time
 
 st.title("Simulation eines Viergelenk-Mechanismus")
 st.sidebar.header("Mechanismus Konfiguration")
@@ -47,6 +49,7 @@ num_rods = st.sidebar.number_input("Anzahl der Stäbe", min_value=3, max_value=n
 
 joints = {1: np.array([mid_x, mid_y])}  # Gelenk 1 existiert, wird aber nicht angezeigt
 fixed_joints = {1}
+show_trajectory = {2: True}  # Gelenk 2 wird immer angezeigt
 
 st.sidebar.subheader("Gelenke Konfiguration")
 for j in range(3, num_joints + 1):
@@ -54,18 +57,18 @@ for j in range(3, num_joints + 1):
         x = st.number_input(f"Gelenk {j} - X", value=st.session_state.loaded_data["joints"][j][0] if st.session_state.loaded_data and j in st.session_state.loaded_data["joints"] else 0.0, step=1.0, key=f"j_{j}_x")
         y = st.number_input(f"Gelenk {j} - Y", value=st.session_state.loaded_data["joints"][j][1] if st.session_state.loaded_data and j in st.session_state.loaded_data["joints"] else 0.0, step=1.0, key=f"j_{j}_y")
         fixed = st.checkbox(f"Gelenk {j} fixiert?", value=j in st.session_state.loaded_data["fixed_joints"] if st.session_state.loaded_data else False, key=f"j_{j}_fixed")
+        show_traj = st.checkbox(f"Bahnkurve anzeigen?", value=False, key=f"j_{j}_traj")
         joints[j] = np.array([x, y])
         if fixed:
             fixed_joints.add(j)
+        show_trajectory[j] = show_traj
 
-# **Gelenk 2 als ausgegrauter Wert anzeigen**
 st.sidebar.subheader("Gelenk 2 (Berechnet)")
 gelenk_2_x = mid_x + radius * np.cos(np.radians(start_angle))
 gelenk_2_y = mid_y + radius * np.sin(np.radians(start_angle))
 st.sidebar.text(f"X: {gelenk_2_x:.2f}, Y: {gelenk_2_y:.2f}")
 joints[2] = np.array([gelenk_2_x, gelenk_2_y])
 
-# **Stäbe werden geladen & gesetzt**
 st.sidebar.subheader("Stäbe Konfiguration")
 rods = []
 
@@ -77,22 +80,16 @@ if 2 not in all_joint_keys:
 
 for i in range(1, num_rods + 1):
     default_rod = st.session_state.loaded_data["rods"][i-1] if st.session_state.loaded_data and i-1 < len(st.session_state.loaded_data["rods"]) else (1, 2)
-    default_joint1 = default_rod[0] if default_rod[0] in all_joint_keys else all_joint_keys[0]
-    default_joint2 = default_rod[1] if default_rod[1] in all_joint_keys else all_joint_keys[0]
-
-    joint1 = st.sidebar.selectbox(f"Stab {i} - Gelenk 1", all_joint_keys, index=all_joint_keys.index(default_joint1), key=f"rod_{i}_j1")
-    joint2 = st.sidebar.selectbox(f"Stab {i} - Gelenk 2", all_joint_keys, index=all_joint_keys.index(default_joint2), key=f"rod_{i}_j2")
-
+    joint1 = st.sidebar.selectbox(f"Stab {i} - Gelenk 1", all_joint_keys, index=all_joint_keys.index(default_rod[0]), key=f"rod_{i}_j1")
+    joint2 = st.sidebar.selectbox(f"Stab {i} - Gelenk 2", all_joint_keys, index=all_joint_keys.index(default_rod[1]), key=f"rod_{i}_j2")
     rods.append((joint1, joint2))
 
-# **Mechanismus erstellen**
 mech = Mechanism([mid_x, mid_y], radius, start_angle, speed, joints, fixed_joints, rods)
+mech.show_trajectory = show_trajectory
 
-# **Mechanismus speichern**
 name = st.sidebar.text_input("Mechanismus Name")
 if st.sidebar.button("💾 Speichern"):
     save_mechanism(mech, name)
 
-# **Simulation starten**
 if st.button("▶️ Simulation starten"):
     simulate_mechanism(mech, 100)
